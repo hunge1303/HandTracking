@@ -1,0 +1,92 @@
+from email.mime import base
+
+import cv2
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import math
+
+
+model_path = "D:\\coding\\models\\handtrack\\hand_landmarker.task"
+
+CONNECTIONS = [(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),
+               (0,9),(9,10),(10,11),(0,13),(13,14),(14,15),(15,16),
+               (0,17),(17,18),(18,19),(5,9),(9,13),(13,17)]
+
+class handDetector():
+    def __init__(self, mode=False, maxHands=2, detectionCon=0.5, trackCon=0.5):
+        self.mode = mode
+        self.maxHands = maxHands
+        self.detectionCon = detectionCon
+        self.trackCon = trackCon
+        self.base_options = python.BaseOptions(model_asset_path=model_path)
+        self.options = vision.HandLandmarkerOptions(base_options=self.base_options, num_hands=maxHands)
+        self.detector = vision.HandLandmarker.create_from_options(self.options)
+        self.tipIds = [4, 8, 12, 16, 20]
+
+    def findHands(self, frame, draw=True):
+        imgRGB = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=imgRGB)
+        result = self.detector.detect(mp_image)
+
+        h, w = frame.shape[:2]
+        count=0
+        count_2=0
+        self.lmList = []
+        for hand in result.hand_landmarks:
+            pts = [(int(lm.x * w), int(lm.y * h)) for lm in hand]
+            self.lmList.append(pts)
+            for a, b in CONNECTIONS:
+                cv2.line(frame, pts[a], pts[b], (0, 255, 0), 2)
+            for x, y in pts:
+                if count==8 or count_2==29:
+                    cv2.circle(frame, (x, y), 10, (255, 0, 255), -1)
+                cv2.circle(frame, (x, y), 5, (0, 0, 255), -1)
+                count_2+=1
+                count+=1
+        return frame, self.lmList
+    def fingersUp(self):
+        fingers = []
+        x1 = [0] * 5
+        y1 = [0] * 5
+        x2 = [0] * 5
+        y2 = [0] * 5
+
+        for lm in self.lmList:
+            for i in range(5):
+                x1[i], y1[i] = lm[self.tipIds[i]]
+                x2[i], y2[i] = lm[self.tipIds[i] - 2]
+            if x1[0] > x2[0]:
+                fingers.append(1)
+            else:
+                fingers.append(0)
+            for id in range(1, 5):
+                if y1[id] < y2[id]:
+                    fingers.append(1)
+                else:
+                    fingers.append(0)
+        return fingers
+    def findDistance(self, x1, y1, x2, y2):
+        length = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        return length
+
+
+
+def main():
+    cap = cv2.VideoCapture(0)
+    detector = handDetector()
+    while cap.isOpened():
+        success, frame = cap.read()
+        if not success:
+            break
+        frame, lmList = detector.findHands(frame)
+
+        cv2.imshow('Hand Tracking', frame)
+        if cv2.waitKey(1) & 0xff == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    main()
